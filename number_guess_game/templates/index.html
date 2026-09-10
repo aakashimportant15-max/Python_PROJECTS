@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Guess The Number</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Inter:wght@400;500;600&family=Space+Mono:wght@700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+  <div class="table-glow"></div>
+
+  <main class="card" id="card">
+    <p class="eyebrow">arcade #{{ max_range }}</p>
+    <h1>Guess The Number</h1>
+    <p class="subtitle">
+      Maine 1 se <span class="range-chip">{{ max_range }}</span> ke beech
+      ek number soch liya hai. Pakdo mujhe!
+    </p>
+
+    <form id="guess-form" autocomplete="off">
+      <input
+        type="number"
+        id="guess-input"
+        min="1"
+        max="{{ max_range }}"
+        placeholder="Apna guess likho..."
+        required
+      >
+      <button type="submit" id="guess-btn">Guess!</button>
+    </form>
+
+    <p id="feedback" class="feedback"></p>
+
+    <div class="stats">
+      <div class="stat">
+        <span class="stat-value" id="attempts-count">0</span>
+        <span class="stat-label">tries</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value" id="range-value">{{ max_range }}</span>
+        <span class="stat-label">range</span>
+      </div>
+    </div>
+
+    <button type="button" id="new-game-btn" class="ghost-btn" hidden>
+      Naya Game Khelo 🔁
+    </button>
+  </main>
+
+  <canvas id="confetti-canvas"></canvas>
+
+  <script>
+    const form = document.getElementById('guess-form');
+    const input = document.getElementById('guess-input');
+    const btn = document.getElementById('guess-btn');
+    const feedback = document.getElementById('feedback');
+    const attemptsCount = document.getElementById('attempts-count');
+    const rangeValue = document.getElementById('range-value');
+    const card = document.getElementById('card');
+    const newGameBtn = document.getElementById('new-game-btn');
+
+    let gameOver = false;
+
+    function setFeedback(message, kind) {
+      feedback.textContent = message;
+      feedback.className = 'feedback show ' + kind;
+    }
+
+    function shakeCard() {
+      card.classList.remove('shake');
+      // reflow taaki animation dobara trigger ho
+      void card.offsetWidth;
+      card.classList.add('shake');
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (gameOver) return;
+
+      const guessValue = input.value;
+      if (guessValue === '') return;
+
+      btn.disabled = true;
+
+      try {
+        const res = await fetch('/guess', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ guess: guessValue }),
+        });
+        const data = await res.json();
+
+        if (data.attempts !== undefined) {
+          attemptsCount.textContent = data.attempts;
+        }
+
+        if (data.result === 'invalid') {
+          setFeedback(data.message, 'warn');
+          shakeCard();
+        } else if (data.result === 'low') {
+          setFeedback(data.message, 'low');
+          shakeCard();
+        } else if (data.result === 'high') {
+          setFeedback(data.message, 'high');
+          shakeCard();
+        } else if (data.result === 'correct') {
+          setFeedback(data.message, 'win');
+          gameOver = true;
+          input.disabled = true;
+          btn.disabled = true;
+          newGameBtn.hidden = false;
+          launchConfetti();
+        }
+      } catch (err) {
+        setFeedback('Kuch गड़बड़ हो गई, dobara try karo.', 'warn');
+      } finally {
+        if (!gameOver) btn.disabled = false;
+        input.value = '';
+        input.focus();
+      }
+    });
+
+    newGameBtn.addEventListener('click', async () => {
+      const res = await fetch('/new-game', { method: 'POST' });
+      const data = await res.json();
+
+      gameOver = false;
+      input.disabled = false;
+      btn.disabled = false;
+      input.max = data.max_range;
+      input.placeholder = 'Apna guess likho...';
+      rangeValue.textContent = data.max_range;
+      attemptsCount.textContent = '0';
+      feedback.className = 'feedback';
+      feedback.textContent = '';
+      newGameBtn.hidden = true;
+      input.focus();
+    });
+
+    /* ---------- Confetti (jeetne par ek hi baar chalta hai) ---------- */
+    function launchConfetti() {
+      const canvas = document.getElementById('confetti-canvas');
+      const ctx = canvas.getContext('2d');
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+
+      const colors = ['#ff5d8f', '#ffd23f', '#2dd4bf', '#8b7bff', '#ffffff'];
+      const pieces = [];
+      const pieceCount = 140;
+
+      for (let i = 0; i < pieceCount; i++) {
+        pieces.push({
+          x: Math.random() * canvas.width,
+          y: -20 - Math.random() * canvas.height * 0.5,
+          size: 6 + Math.random() * 6,
+          color: colors[Math.floor(Math.random() * colors.length)],
+          speedY: 2 + Math.random() * 3,
+          speedX: -1.5 + Math.random() * 3,
+          rotation: Math.random() * 360,
+          rotationSpeed: -6 + Math.random() * 12,
+          shape: Math.random() > 0.5 ? 'rect' : 'circle',
+        });
+      }
+
+      let frame = 0;
+      const maxFrames = 220;
+
+      function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        pieces.forEach((p) => {
+          p.x += p.speedX;
+          p.y += p.speedY;
+          p.rotation += p.rotationSpeed;
+
+          ctx.save();
+          ctx.translate(p.x, p.y);
+          ctx.rotate((p.rotation * Math.PI) / 180);
+          ctx.fillStyle = p.color;
+          if (p.shape === 'rect') {
+            ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 0.6);
+          } else {
+            ctx.beginPath();
+            ctx.arc(0, 0, p.size / 2, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          ctx.restore();
+        });
+
+        frame++;
+        if (frame < maxFrames) {
+          requestAnimationFrame(draw);
+        } else {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+      }
+      draw();
+    }
+
+    window.addEventListener('resize', () => {
+      const canvas = document.getElementById('confetti-canvas');
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    });
+  </script>
+</body>
+</html>
